@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AFL 501 Darts</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+    body { margin: 0; background:#0b0f14; color:#e8eef7; }
+    header { padding: 16px; border-bottom: 1px solid #1c2736; display:flex; gap:12px; align-items:center; justify-content:space-between;}
+    h1 { font-size: 18px; margin:0; letter-spacing:.2px; }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 16px; }
+    .card { background:#121a24; border:1px solid #1c2736; border-radius: 14px; padding: 14px; }
+    .row { display:flex; gap: 12px; flex-wrap: wrap; }
+    input, button, select { font: inherit; }
+    input, select { background:#0b0f14; color:#e8eef7; border:1px solid #2a3a52; border-radius: 10px; padding: 10px 12px; }
+    button { background:#1e90ff; color:#081018; border:none; border-radius: 10px; padding: 10px 12px; cursor:pointer; font-weight: 700; }
+    button.secondary { background:#233246; color:#e8eef7; border:1px solid #2a3a52; }
+    button.danger { background:#ff4d4d; color:#081018; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .players { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+    .pname { font-weight:800; }
+    .score { font-size: 34px; font-weight: 900; margin-top: 6px; }
+    .tag { font-size: 12px; opacity: .8; }
+    .turn { outline: 2px solid #1e90ff; }
+    .pill { display:inline-flex; align-items:center; gap:8px; border:1px solid #2a3a52; padding: 6px 10px; border-radius: 999px; background:#0b0f14; }
+    .controls { display:grid; grid-template-columns: 1fr; gap: 10px; }
+    .grid { display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .grid2 { display:grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .msg { padding: 10px 12px; border-radius: 12px; background:#0b0f14; border:1px solid #2a3a52; }
+    .small { font-size: 12px; opacity: .85; }
+    .footer { opacity:.8; font-size: 12px; margin-top: 12px; }
+    a { color:#8cc3ff; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🏉 AFL 501 Darts</h1>
+    <div class="pill">
+      <span id="turnLabel">Turn: —</span>
+      <button class="secondary" id="nextBtn" title="Next player">Next</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="row">
+      <div class="card" style="flex:1 1 360px;">
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <input id="nameInput" placeholder="Add player name" />
+          <button id="addBtn">Add</button>
+          <button class="secondary" id="resetBtn">Reset game</button>
+        </div>
+        <div class="footer small">
+          Rules: Start 501. Must finish on a <b>GOAL</b> (double). Bust sends you back to the score at start of turn.
+        </div>
+      </div>
+
+      <div class="card" style="flex:1 1 360px;">
+        <div class="controls">
+          <div class="row" style="align-items:center; justify-content:space-between;">
+            <div>
+              <div class="tag">Selected segment</div>
+              <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <select id="baseSelect">
+                  <option value="20">20</option><option value="19">19</option><option value="18">18</option>
+                  <option value="17">17</option><option value="16">16</option><option value="15">15</option>
+                  <option value="14">14</option><option value="13">13</option><option value="12">12</option>
+                  <option value="11">11</option><option value="10">10</option><option value="9">9</option>
+                  <option value="8">8</option><option value="7">7</option><option value="6">6</option>
+                  <option value="5">5</option><option value="4">4</option><option value="3">3</option>
+                  <option value="2">2</option><option value="1">1</option>
+                </select>
+                <span class="pill"><span id="multLabel">Single</span> → <b id="throwValue">20</b></span>
+              </div>
+            </div>
+            <div>
+              <div class="tag">Darts this turn</div>
+              <div class="pill"><b id="dartCount">0</b>/3</div>
+            </div>
+          </div>
+
+          <div class="grid">
+            <button class="secondary" data-m="1" id="singleBtn">Single</button>
+            <button class="secondary" data-m="2" id="doubleBtn">GOAL (Double)</button>
+            <button class="secondary" data-m="3" id="tripleBtn">SUPER GOAL (Triple)</button>
+          </div>
+
+          <div class="grid2">
+            <button class="secondary" id="obullBtn">BEHIND (25)</button>
+            <button class="secondary" id="ibullBtn">GOAL SQUARE (50)</button>
+          </div>
+
+          <div class="row" style="justify-content:space-between;">
+            <button id="scoreBtn">Add throw</button>
+            <button class="danger" id="undoBtn" disabled>Undo</button>
+          </div>
+
+          <div class="msg" id="msg">Add players to start.</div>
+          <div class="small">
+            AFL callouts: Triple 20/19 = “50!!!” (optional house rule). Bust = “FREE KICK CARLTON.”
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:14px;"></div>
+
+    <div class="players" id="players"></div>
+  </div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+
+  const state = {
+    players: [], // {name, score}
+    turn: 0,
+    dartsThisTurn: 0,
+    turnStartScore: 501,
+    mult: 1,
+    base: 20,
+    lastActions: [] // stack for undo
+  };
+
+  const msg = (t) => { $("msg").textContent = t; };
+
+  function renderPlayers() {
+    const root = $("players");
+    root.innerHTML = "";
+    state.players.forEach((p, idx) => {
+      const div = document.createElement("div");
+      div.className = "card" + (idx === state.turn ? " turn" : "");
+      div.innerHTML = `
+        <div class="pname">${p.name}</div>
+        <div class="score">${p.score}</div>
+        <div class="tag">${idx === state.turn ? "Your throw" : "Waiting"}</div>
+      `;
+      root.appendChild(div);
+    });
+
+    $("turnLabel").textContent = state.players.length
+      ? `Turn: ${state.players[state.turn].name}`
+      : "Turn: —";
+  }
+
+  function updateThrowUI(label) {
+    $("multLabel").textContent = label;
+    $("throwValue").textContent = state.base * state.mult;
+  }
+
+  function setMult(m, label) {
+    state.mult = m;
+    updateThrowUI(label);
+    // highlight not needed, but could be added
+  }
+
+  function clampTurn() {
+    if (!state.players.length) { state.turn = 0; return; }
+    state.turn = (state.turn + state.players.length) % state.players.length;
+  }
+
+  function startTurn() {
+    if (!state.players.length) return;
+    state.dartsThisTurn = 0;
+    state.turnStartScore = state.players[state.turn].score;
+    $("dartCount").textContent = state.dartsThisTurn;
+    msg(`${state.players[state.turn].name} to throw. Score: ${state.players[state.turn].score}`);
+  }
+
+  function nextPlayer() {
+    if (!state.players.length) return;
+    state.turn++;
+    clampTurn();
+    startTurn();
+    renderPlayers();
+  }
+
+  function isCheckoutLegal(newScore, wasDouble) {
+    // Must finish exactly on 0 and final dart must be a double (GOAL ring)
+    if (newScore === 0 && !wasDouble) return false;
+    return true;
+  }
+
+  function addThrow(points, wasDouble=false, label="") {
+    if (!state.players.length) return msg("Add at least 1 player.");
+
+    const p = state.players[state.turn];
+
+    // Lock to 3 darts per turn
+    if (state.dartsThisTurn >= 3) {
+      msg("3 darts used — hit Next.");
+      return;
+    }
+
+    const prevScore = p.score;
+    const attempted = prevScore - points;
+
+    // Bust conditions:
+    // - score goes below 0
+    // - score hits 0 but not on double
+    // - score becomes 1 (standard darts rule because can't finish on double)
+    const bust =
+      attempted < 0 ||
+      attempted === 1 ||
+      (attempted === 0 && !wasDouble);
+
+    // Save for undo
+    state.lastActions.push({
+      turn: state.turn,
+      prevScore,
+      prevDarts: state.dartsThisTurn,
+      prevTurnStartScore: state.turnStartScore,
+      didBust: bust
+    });
+    $("undoBtn").disabled = state.lastActions.length === 0;
+
+    if (bust) {
+      // revert to turn start score and consume remaining darts (end turn)
+      p.score = state.turnStartScore;
+      state.dartsThisTurn = 3;
+      $("dartCount").textContent = state.dartsThisTurn;
+      renderPlayers();
+      msg(`BUST! “FREE KICK CARLTON.” Back to ${state.turnStartScore}. Hit Next.`);
+      return;
+    }
+
+    // Apply score
+    p.score = attempted;
+    state.dartsThisTurn++;
+    $("dartCount").textContent = state.dartsThisTurn;
+    renderPlayers();
+
+    // Optional AFL callout
+    if (label === "SUPER GOAL" && (points === 60 || points === 57)) {
+      msg(`💥 50!!! (optional house rule) — ${p.name} scored ${points}.`);
+    } else {
+      msg(`${p.name} scored ${points} ${label ? `(${label})` : ""}. Remaining: ${p.score}`);
+    }
+
+    if (p.score === 0) {
+      msg(`🏆 ${p.name} WINS! Finished on a GOAL (double).`);
+    }
+  }
+
+  function undo() {
+    const a = state.lastActions.pop();
+    $("undoBtn").disabled = state.lastActions.length === 0;
+    if (!a) return;
+
+    state.turn = a.turn;
+    const p = state.players[state.turn];
+    p.score = a.prevScore;
+    state.dartsThisTurn = a.prevDarts;
+    state.turnStartScore = a.prevTurnStartScore;
+
+    $("dartCount").textContent = state.dartsThisTurn;
+    renderPlayers();
+    msg("Undid last throw.");
+  }
+
+  function resetGame() {
+    state.players.forEach(p => p.score = 501);
+    state.turn = 0;
+    state.dartsThisTurn = 0;
+    state.turnStartScore = 501;
+    state.lastActions = [];
+    $("undoBtn").disabled = true;
+    $("dartCount").textContent = "0";
+    renderPlayers();
+    msg("Game reset. 501 each. Add throw to start.");
+    startTurn();
+  }
+
+  // UI bindings
+  $("addBtn").addEventListener("click", () => {
+    const name = $("nameInput").value.trim();
+    if (!name) return;
+    state.players.push({ name, score: 501 });
+    $("nameInput").value = "";
+    clampTurn();
+    renderPlayers();
+    if (state.players.length === 1) startTurn();
+    msg(`Added ${name}.`);
+  });
+
+  $("nameInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("addBtn").click();
+  });
+
+  $("baseSelect").addEventListener("change", (e) => {
+    state.base = Number(e.target.value);
+    $("throwValue").textContent = state.base * state.mult;
+  });
+
+  $("singleBtn").addEventListener("click", () => setMult(1, "Single"));
+  $("doubleBtn").addEventListener("click", () => setMult(2, "GOAL"));
+  $("tripleBtn").addEventListener("click", () => setMult(3, "SUPER GOAL"));
+
+  $("obullBtn").addEventListener("click", () => addThrow(25, false, "BEHIND"));
+  $("ibullBtn").addEventListener("click", () => addThrow(50, false, "GOAL SQUARE"));
+
+  $("scoreBtn").addEventListener("click", () => {
+    const points = state.base * state.mult;
+    const wasDouble = state.mult === 2;
+    const label = state.mult === 1 ? "Single" : state.mult === 2 ? "GOAL" : "SUPER GOAL";
+    addThrow(points, wasDouble, label);
+  });
+
+  $("undoBtn").addEventListener("click", undo);
+  $("resetBtn").addEventListener("click", resetGame);
+  $("nextBtn").addEventListener("click", nextPlayer);
+
+  // init
+  renderPlayers();
+  updateThrowUI("Single");
+})();
+</script>
+</body>
+</html>
